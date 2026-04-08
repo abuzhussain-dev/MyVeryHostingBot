@@ -1,14 +1,14 @@
 {
   "name": "AFK Bot",
   "bot-account": {
-    "username": "Slobot00",
+    "username": "Somer",
     "password": "",
     "type": "offline"
   },
   "server": {
     "ip": "ZorritosMechanics.aternos.me:16184",
     "port": 16184,
-    "version": "",
+    "version": "1.21.11",
     "try-creative": false
   },
   "position": {
