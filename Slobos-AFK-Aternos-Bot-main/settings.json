@@ -6,8 +6,8 @@
     "type": "offline"
   },
   "server": {
-    "ip": "slobtest1.aternos.me",
-    "port": 27586,
+    "ip": "ZorritosMechanics.aternos.me:16184",
+    "port": 16184,
     "version": "",
     "try-creative": false
   },
