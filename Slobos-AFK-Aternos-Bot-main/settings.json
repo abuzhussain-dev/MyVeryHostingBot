@@ -2,7 +2,6 @@
   "name": "AFK Bot",
   "bot-account": {
     "username": "SEVERbot",
-    "password": "",
     "type": "mojang"
   },
   "server": {
