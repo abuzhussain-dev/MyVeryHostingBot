@@ -5,7 +5,7 @@
     "type": "mojang"
   },
   "server": {
-    "ip": "ZorritosMechanics.aternos.me:16184",
+    "ip": "ZorritosMechanics.aternos.me",
     "port": 16184,
     "version": "1.21.11",
   },
