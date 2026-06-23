@@ -5,9 +5,9 @@
     "type": "mojang"
   },
   "server": {
-    "ip": "ZorritosMechanics.aternos.me:16184",
-    "port": 16184,
-    "version": "1.21.11",
+    "ip": "Royal_SmpS1.aternos.me",
+    "port": 41811,
+    "version": "1.21.11"
   },
   "position": {
     "enabled": false,
@@ -18,7 +18,7 @@
   "utils": {
     "auto-auth": {
       "enabled": true,
-      "password": "chalol78"
+      "password": "RANDOM"
     },
     "anti-afk": {
       "enabled": true,
@@ -27,7 +27,7 @@
     "chat-messages": {
       "enabled": true,
       "repeat": true,
-      "repeat-delay": 120,
+      "repeat-delay": 120
     },
     "chat-log": true,
     "auto-reconnect": true,
