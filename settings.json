@@ -25,9 +25,10 @@
       "sneak": true
     },
     "chat-messages": {
-      "enabled": true,
-      "repeat": true,
-      "repeat-delay": 120
+      "enabled": false,
+      "repeat": false,
+      "repeat-delay": 120,
+      "messages": ["Hello!"]
     },
     "chat-log": true,
     "auto-reconnect": true,
