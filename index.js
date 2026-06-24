@@ -1626,6 +1626,11 @@ function initializeModules(bot, mcData, defaultMove) {
     chatModule(bot);
   }
 
+  // ---------- PLAYER TRACKER (LOCATOR TRIANGULATION) ----------
+  if (config.playerTracker && config.playerTracker.enabled) {
+    playerTrackerModule(bot);
+  }
+
   addLog("[Modules] All modules initialized!");
 }
 
@@ -1972,6 +1977,88 @@ function sendDiscordWebhook(content, color = 0x0099ff) {
 
   req.write(payload);
   req.end();
+}
+
+// ============================================================
+// PLAYER TRACKER MODULE (LOCATOR TRIANGULATION)
+// ============================================================
+function playerTrackerModule(bot) {
+  const cfg = config.playerTracker;
+  const hfToken = process.env.HF_TOKEN;
+  if (!hfToken) { addLog("[PlayerTracker] No HF_TOKEN - disabled"); return; }
+
+  let pending = [];
+
+  bot._client.on('packet_tracked_waypoint', (pkt) => {
+    if (!bot || !bot.entity) return;
+    const r = { botX: Math.floor(bot.entity.position.x), botZ: Math.floor(bot.entity.position.z), time: Date.now() };
+    if (pkt.angle !== undefined) r.azimuth = pkt.angle;
+    if (pkt.uuid) r.uuid = pkt.uuid;
+    pending.push(r);
+  });
+
+  // Post every 3s
+  addInterval(() => {
+    if (pending.length === 0) return;
+    const batch = pending.splice(0);
+    const body = JSON.stringify(batch);
+    const opts = {
+      hostname: 'huggingface.co', port: 443,
+      path: `/api/datasets/${cfg.hfDataset}/push`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${hfToken}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const req = https.request(opts, () => {});
+    req.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
+    req.write(body);
+    req.end();
+  }, 3000);
+
+  // Scan cycle every scanInterval seconds
+  addInterval(() => {
+    if (!bot || !botState.connected) return;
+    addLog("[PlayerTracker] Scan cycle start");
+
+    let step = 0;
+    const next = () => {
+      step++;
+      if (!bot || !botState.connected) return;
+      if (step === 1) { // spin 360°
+        const steps = 8;
+        let i = 0;
+        const spin = () => {
+          if (i >= steps || !bot) { setTimeout(next, 500); return; }
+          try { bot.look(Math.PI * 2 * i / steps, 0, false); } catch(e) {}
+          i++; setTimeout(spin, 250);
+        };
+        spin();
+      } else if (step <= 1 + cfg.teleportCycles * 2) { // /home → /spawn cycles
+        const cmd = step % 2 === 0 ? '/spawn' : '/home';
+        bot.chat(cmd);
+        setTimeout(() => {
+          if (bot && bot.entity) pending.push({ botX: Math.floor(bot.entity.position.x), botZ: Math.floor(bot.entity.position.z), time: Date.now(), type: cmd });
+          setTimeout(next, 1000);
+        }, 2000);
+      } else if (step === 2 + cfg.teleportCycles * 2) { // walk forward
+        try { bot.setControlState('forward', true); } catch(e) {}
+        const walkEnd = Date.now() + cfg.walkDuration * 1000;
+        const walkTimer = setInterval(() => {
+          if (!bot || !botState.connected || Date.now() >= walkEnd) {
+            clearInterval(walkTimer);
+            try { if (bot) bot.setControlState('forward', false); } catch(e) {}
+            addLog("[PlayerTracker] Scan complete");
+            return;
+          }
+          if (bot && bot.entity) pending.push({ botX: Math.floor(bot.entity.position.x), botZ: Math.floor(bot.entity.position.z), time: Date.now(), type: 'walk' });
+        }, cfg.recordInterval * 1000);
+      }
+    };
+    next();
+  }, cfg.scanInterval * 1000);
 }
 
 // ============================================================

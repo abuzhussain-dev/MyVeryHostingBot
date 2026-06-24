@@ -77,5 +77,15 @@
   },
   "chat": {
     "respond": true
+  },
+  "playerTracker": {
+    "enabled": true,
+    "scanInterval": 60,
+    "spinDuration": 2,
+    "teleportCycles": 2,
+    "walkDuration": 5,
+    "recordInterval": 1,
+    "hfDataset": "abuzhussain-dev/smp-player-tracking",
+    "hfToken": "{env:HF_TOKEN}"
   }
 }
