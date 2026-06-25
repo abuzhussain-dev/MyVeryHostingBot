@@ -2005,7 +2005,7 @@ function playerTrackerModule(bot) {
     const newLines = batch.map(r => JSON.stringify(r)).join('\n') + '\n';
     const getOpts = {
       hostname: 'huggingface.co', port: 443,
-      path: `/api/datasets/${cfg.hfDataset}/raw/main/data.jsonl`,
+      path: `/datasets/${cfg.hfDataset}/raw/main/data.jsonl`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${hfToken}` }
     };
