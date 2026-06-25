@@ -2001,15 +2001,10 @@ function playerTrackerModule(bot) {
   addInterval(() => {
     if (pending.length === 0) return;
     const batch = pending.splice(0);
-    const content = JSON.stringify(batch);
+    const jsonl = batch.map(r => JSON.stringify(r)).join('\n') + '\n';
     const payload = JSON.stringify({
-      operations: [
-        { operation: 'append',
-          config: { data: { columns: ['uuid','azimuth','botX','botZ','time','type','packet'] }},
-          dataframe: { content: content, type: 'jsonl' }
-        }
-      ],
-      description: `Tracked ${batch.length} waypoints`
+      summary: `Tracked ${batch.length} waypoints`,
+      files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
     });
     const opts = {
       hostname: 'huggingface.co', port: 443,
