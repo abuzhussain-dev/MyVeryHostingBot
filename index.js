@@ -2003,6 +2003,35 @@ function playerTrackerModule(bot) {
     if (pending.length === 0) return;
     const batch = pending.splice(0);
     const newLines = batch.map(r => JSON.stringify(r)).join('\n') + '\n';
+    const makeCommitBody = (content) => {
+      const b64 = Buffer.from(content).toString('base64');
+      return [
+        JSON.stringify({ key: 'header', value: { summary: `Append ${batch.length} waypoints`, description: 'Player tracker data' } }),
+        JSON.stringify({ key: 'file', value: { path: 'data.jsonl', content: b64, encoding: 'base64' } })
+      ].join('\n');
+    };
+    const doPost = (body) => {
+      const opts = {
+        hostname: 'huggingface.co', port: 443,
+        path: `/api/datasets/${cfg.hfDataset}/commit/main`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hfToken}`,
+          'Content-Type': 'application/x-ndjson',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      };
+      const req = https.request(opts, (res) => {
+        let r = '';
+        res.on('data', c => r += c);
+        res.on('end', () => {
+          if (res.statusCode >= 400) addLog(`[PlayerTracker] HF commit ${res.statusCode}: ${r.slice(0, 200)}`);
+        });
+      });
+      req.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
+      req.write(body);
+      req.end();
+    };
     const getOpts = {
       hostname: 'huggingface.co', port: 443,
       path: `/datasets/${cfg.hfDataset}/raw/main/data.jsonl`,
@@ -2012,55 +2041,9 @@ function playerTrackerModule(bot) {
     const getReq = https.request(getOpts, (getRes) => {
       let existing = '';
       getRes.on('data', c => existing += c);
-      getRes.on('end', () => {
-        const content = existing + newLines;
-        const body = JSON.stringify({ files: [{ path: 'data.jsonl', content }] });
-        const postOpts = {
-          hostname: 'huggingface.co', port: 443,
-          path: `/api/datasets/${cfg.hfDataset}/commit/main`,
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${hfToken}`,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(body)
-          }
-        };
-        const postReq = https.request(postOpts, (postRes) => {
-          let r = '';
-          postRes.on('data', c => r += c);
-          postRes.on('end', () => {
-            if (postRes.statusCode >= 400) addLog(`[PlayerTracker] HF commit ${postRes.statusCode}: ${r.slice(0, 200)}`);
-          });
-        });
-        postReq.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
-        postReq.write(body);
-        postReq.end();
-      });
+      getRes.on('end', () => doPost(makeCommitBody(existing + newLines)));
     });
-    getReq.on('error', (e) => {
-      // If GET fails (first upload, file doesn't exist yet), just commit the new data
-      const body = JSON.stringify({ files: [{ path: 'data.jsonl', content: newLines }] });
-      const postOpts = {
-        hostname: 'huggingface.co', port: 443,
-        path: `/api/datasets/${cfg.hfDataset}/commit/main`,
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${hfToken}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-      const postReq = https.request(postOpts, (postRes) => {
-        let r = '';
-        postRes.on('data', c => r += c);
-        postRes.on('end', () => {
-          if (postRes.statusCode >= 400) addLog(`[PlayerTracker] HF commit ${postRes.statusCode}: ${r.slice(0, 200)}`);
-        });
-      });
-      postReq.on('error', (e2) => addLog(`[PlayerTracker] HF error: ${e2.message}`));
-      postReq.write(body);
-      postReq.end();
-    });
+    getReq.on('error', () => doPost(makeCommitBody(newLines)));
     getReq.end();
   }, 30000);
 
