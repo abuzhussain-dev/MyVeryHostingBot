@@ -2060,7 +2060,10 @@ function playerTrackerModule(bot) {
     const getReq = https.request(getOpts, (getRes) => {
       let existing = '';
       getRes.on('data', c => existing += c);
-      getRes.on('end', () => doPost(makeCommitBody(existing + newLines)));
+      getRes.on('end', () => {
+        if (getRes.statusCode === 404) existing = '';
+        doPost(makeCommitBody(existing + newLines));
+      });
     });
     getReq.on('error', () => doPost(makeCommitBody(newLines)));
     getReq.end();
