@@ -1988,7 +1988,6 @@ function playerTrackerModule(bot) {
   if (!hfToken) { addLog("[PlayerTracker] No HF_TOKEN - disabled"); return; }
 
   let pending = [];
-  let allRecords = [];
 
   bot._client.on('packet_tracked_waypoint', (pkt) => {
     if (!bot || !bot.entity) return;
@@ -1998,30 +1997,71 @@ function playerTrackerModule(bot) {
     pending.push(r);
   });
 
-  // Post ALL accumulated data to HF Dataset every 30s
-  addInterval(() => {
-    if (pending.length === 0) return;
-    allRecords.push(...pending.splice(0));
-    const jsonl = allRecords.map(r => JSON.stringify(r)).join('\n') + '\n';
-    const payload = JSON.stringify({
-      summary: `Tracked ${allRecords.length} waypoints (session total)`,
-      files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
-    });
-    const opts = {
+  // Post to HF Dataset every 30s — accumulates across restarts
+  function commitToHf(newRecords) {
+    if (newRecords.length === 0) return;
+    // Fetch existing data, append new records, commit
+    const getOpts = {
       hostname: 'huggingface.co', port: 443,
-      path: `/api/datasets/${cfg.hfDataset}/commit/main`,
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${hfToken}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload)
-      }
+      path: `/datasets/${cfg.hfDataset}/raw/main/data.jsonl`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${hfToken}` }
     };
-    const req = https.request(opts, () => {});
-    req.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
-    req.write(payload);
-    req.end();
-  }, 30000);
+    const getReq = https.request(getOpts, (res) => {
+      let existing = '';
+      res.on('data', (chunk) => existing += chunk);
+      res.on('end', () => {
+        let allLines = (res.statusCode === 200 && existing.trim())
+          ? existing.trim().split('\n').filter(l => l)
+          : [];
+        newRecords.forEach(r => allLines.push(JSON.stringify(r)));
+        const jsonl = allLines.join('\n') + '\n';
+        const payload = JSON.stringify({
+          summary: `Tracked ${newRecords.length} waypoints (${allLines.length} total)`,
+          files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
+        });
+        const postOpts = {
+          hostname: 'huggingface.co', port: 443,
+          path: `/api/datasets/${cfg.hfDataset}/commit/main`,
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${hfToken}`,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+          }
+        };
+        const postReq = https.request(postOpts, () => {});
+        postReq.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
+        postReq.write(payload);
+        postReq.end();
+      });
+    });
+    getReq.on('error', () => {
+      // If fetch fails (first time or network issue), just commit new data
+      const jsonl = newRecords.map(r => JSON.stringify(r)).join('\n') + '\n';
+      const payload = JSON.stringify({
+        summary: `Tracked ${newRecords.length} waypoints`,
+        files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
+      });
+      const postOpts = {
+        hostname: 'huggingface.co', port: 443,
+        path: `/api/datasets/${cfg.hfDataset}/commit/main`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hfToken}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      };
+      const postReq = https.request(postOpts, () => {});
+      postReq.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
+      postReq.write(payload);
+      postReq.end();
+    });
+    getReq.end();
+  }
+
+  addInterval(() => { commitToHf(pending.splice(0)); }, 30000);
 
   // Scan cycle every scanInterval seconds
   addInterval(() => {
