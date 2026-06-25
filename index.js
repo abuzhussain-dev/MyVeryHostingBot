@@ -1990,11 +1990,22 @@ function playerTrackerModule(bot) {
   let pending = [];
   let walkTimerId = null;
 
-  bot._client.on('packet_tracked_waypoint', (pkt) => {
+  bot._client.on('tracked_waypoint', (pkt) => {
     if (!bot || !bot.entity) return;
+    if (pkt.operation === 'untrack') return;
+    const wp = pkt.waypoint;
+    if (!wp || !wp.uuid) return;
     const r = { botX: Math.floor(bot.entity.position.x), botZ: Math.floor(bot.entity.position.z), time: Date.now() };
-    if (pkt.angle !== undefined) r.azimuth = pkt.angle;
-    if (pkt.uuid) r.uuid = pkt.uuid;
+    r.uuid = wp.uuid;
+    r.iconStyle = wp.icon?.style;
+    r.wpType = wp.type;
+    if (wp.type === 'azimuth' && typeof wp.data === 'number') {
+      r.azimuth = wp.data;
+    } else if (wp.type === 'vec3i' && wp.data) {
+      r.playerX = wp.data.x;
+      r.playerY = wp.data.y;
+      r.playerZ = wp.data.z;
+    }
     pending.push(r);
   });
 
