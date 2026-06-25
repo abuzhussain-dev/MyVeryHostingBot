@@ -1988,6 +1988,7 @@ function playerTrackerModule(bot) {
   if (!hfToken) { addLog("[PlayerTracker] No HF_TOKEN - disabled"); return; }
 
   let pending = [];
+  let walkTimerId = null;
 
   bot._client.on('packet_tracked_waypoint', (pkt) => {
     if (!bot || !bot.entity) return;
@@ -1997,71 +1998,33 @@ function playerTrackerModule(bot) {
     pending.push(r);
   });
 
-  // Post to HF Dataset every 30s — accumulates across restarts
-  function commitToHf(newRecords) {
-    if (newRecords.length === 0) return;
-    // Fetch existing data, append new records, commit
-    const getOpts = {
+  // Post every 30s via HF commit API (one JSON file per batch)
+  addInterval(() => {
+    if (pending.length === 0) return;
+    const batch = pending.splice(0);
+    const data = { summary: `batch ${Date.now()}`, files: [{ path: `data/batch_${Date.now()}.json`, content: JSON.stringify(batch) }] };
+    const body = JSON.stringify(data);
+    const opts = {
       hostname: 'huggingface.co', port: 443,
-      path: `/datasets/${cfg.hfDataset}/raw/main/data.jsonl`,
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${hfToken}` }
+      path: `/api/datasets/${cfg.hfDataset}/commit/main`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${hfToken}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
     };
-    const getReq = https.request(getOpts, (res) => {
-      let existing = '';
-      res.on('data', (chunk) => existing += chunk);
+    const req = https.request(opts, (res) => {
+      let r = '';
+      res.on('data', c => r += c);
       res.on('end', () => {
-        let allLines = (res.statusCode === 200 && existing.trim())
-          ? existing.trim().split('\n').filter(l => l)
-          : [];
-        newRecords.forEach(r => allLines.push(JSON.stringify(r)));
-        const jsonl = allLines.join('\n') + '\n';
-        const payload = JSON.stringify({
-          summary: `Tracked ${newRecords.length} waypoints (${allLines.length} total)`,
-          files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
-        });
-        const postOpts = {
-          hostname: 'huggingface.co', port: 443,
-          path: `/api/datasets/${cfg.hfDataset}/commit/main`,
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${hfToken}`,
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload)
-          }
-        };
-        const postReq = https.request(postOpts, () => {});
-        postReq.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
-        postReq.write(payload);
-        postReq.end();
+        if (res.statusCode !== 200) addLog(`[PlayerTracker] HF commit ${res.statusCode}: ${r.slice(0, 200)}`);
       });
     });
-    getReq.on('error', () => {
-      // If fetch fails (first time or network issue), just commit new data
-      const jsonl = newRecords.map(r => JSON.stringify(r)).join('\n') + '\n';
-      const payload = JSON.stringify({
-        summary: `Tracked ${newRecords.length} waypoints`,
-        files: [{ path: 'data.jsonl', content: jsonl, encoding: 'utf-8' }]
-      });
-      const postOpts = {
-        hostname: 'huggingface.co', port: 443,
-        path: `/api/datasets/${cfg.hfDataset}/commit/main`,
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${hfToken}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      };
-      const postReq = https.request(postOpts, () => {});
-      postReq.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
-      postReq.write(payload);
-      postReq.end();
-    });
-    getReq.end();
-  }
-
-  addInterval(() => { commitToHf(pending.splice(0)); }, 30000);
+    req.on('error', (e) => addLog(`[PlayerTracker] HF error: ${e.message}`));
+    req.write(body);
+    req.end();
+  }, 30000);
 
   // Scan cycle every scanInterval seconds
   addInterval(() => {
@@ -2091,15 +2054,17 @@ function playerTrackerModule(bot) {
       } else if (step === 2 + cfg.teleportCycles * 2) { // walk forward
         try { bot.setControlState('forward', true); } catch(e) {}
         const walkEnd = Date.now() + cfg.walkDuration * 1000;
-        const walkTimer = addInterval(() => {
+        const walkTimer = setInterval(() => {
           if (!bot || !botState.connected || Date.now() >= walkEnd) {
             clearInterval(walkTimer);
+            walkTimerId = null;
             try { if (bot) bot.setControlState('forward', false); } catch(e) {}
             addLog("[PlayerTracker] Scan complete");
             return;
           }
           if (bot && bot.entity) pending.push({ botX: Math.floor(bot.entity.position.x), botZ: Math.floor(bot.entity.position.z), time: Date.now(), type: 'walk' });
         }, cfg.recordInterval * 1000);
+        walkTimerId = walkTimer;
       }
     };
     next();
