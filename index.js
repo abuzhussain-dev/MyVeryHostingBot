@@ -26,6 +26,8 @@ let botState = {
   wasThrottled: false,
 };
 
+let trackedPlayers = [];
+
 // Health check endpoint for monitoring
 app.get('/', (req, res) => {
   res.send(`
@@ -475,6 +477,10 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/ping", (req, res) => res.send("pong"));
+
+app.get("/api/players", (req, res) => {
+  res.json({ players: trackedPlayers.slice(-100), total: trackedPlayers.length });
+});
 
 app.get("/logs", (req, res) => {
   const logs = getLogs();
@@ -2007,6 +2013,8 @@ function playerTrackerModule(bot) {
       r.playerZ = wp.data.z;
     }
     pending.push(r);
+    trackedPlayers.push(r);
+    if (trackedPlayers.length > 5000) trackedPlayers = trackedPlayers.slice(-1000);
   });
 
   // Append pending records to data.jsonl on HF every 30s
